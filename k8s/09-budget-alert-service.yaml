@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: budget-alert-service
+  namespace: finguard
+  labels:
+    app: budget-alert-service
+    app.kubernetes.io/name: budget-alert-service
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: budget-alert-service
+  template:
+    metadata:
+      labels:
+        app: budget-alert-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5005"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: budget-alert-service
+          image: finguard-budget-alert-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5005
+              name: http
+          envFrom:
+            - configMapRef:
+                name: finguard-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: postgres-password
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: rabbitmq-user
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: rabbitmq-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 150m
+              memory: 200Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: budget-alert-service
+  namespace: finguard
+  labels:
+    app: budget-alert-service
+    app.kubernetes.io/name: budget-alert-service
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5005
+      targetPort: 5005
+      name: http
+  selector:
+    app: budget-alert-service

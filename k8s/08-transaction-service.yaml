@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+  namespace: finguard
+  labels:
+    app: transaction-service
+    app.kubernetes.io/name: transaction-service
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5002"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: transaction-service
+          image: finguard-transaction-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5002
+              name: http
+          envFrom:
+            - configMapRef:
+                name: finguard-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: postgres-password
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: rabbitmq-user
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: rabbitmq-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: finguard-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              cpu: 80m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-service
+  namespace: finguard
+  labels:
+    app: transaction-service
+    app.kubernetes.io/name: transaction-service
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5002
+      targetPort: 5002
+      name: http
+  selector:
+    app: transaction-service

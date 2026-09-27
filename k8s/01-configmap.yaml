@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finguard-config
+  namespace: finguard
+  labels:
+    app.kubernetes.io/name: finguard
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  # Database Connectivity (PostgreSQL)
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "postgres"
+  POSTGRES_AUTH_DB: "finguard_auth"
+  POSTGRES_TRANSACTIONS_DB: "finguard_transactions"
+  POSTGRES_BUDGETS_DB: "finguard_budgets"
+
+  # Message Broker Connectivity (RabbitMQ)
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_MGMT_PORT: "15672"
+
+  # Service Port Configurations
+  AUTH_PORT: "5001"
+  TRANSACTION_PORT: "5002"
+  CATEGORIZATION_PORT: "5003"
+  FRAUD_PORT: "5004"
+  BUDGET_PORT: "5005"
+  GATEWAY_PORT: "80"
+
+  # Internal Service URLs (Kubernetes Cluster DNS)
+  AUTH_SERVICE_URL: "http://auth-service:5001"
+  TRANSACTION_SERVICE_URL: "http://transaction-service:5002"
+  CATEGORIZATION_SERVICE_URL: "http://categorization-service:5003"
+  FRAUD_SERVICE_URL: "http://fraud-detection-service:5004"
+  BUDGET_SERVICE_URL: "http://budget-alert-service:5005"
+
+  # General Runtime Settings
+  JWT_EXPIRES_IN: "24h"
+  NODE_ENV: "production"
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "info"

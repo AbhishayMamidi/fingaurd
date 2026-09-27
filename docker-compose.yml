@@ -1,0 +1,279 @@
+services:
+  # ============================================================================
+  # Infrastructure: PostgreSQL Database (Single instance, isolated DBs)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: finguard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finguard_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finguard_dev_secret_2026}
+      POSTGRES_DB: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/local/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init-databases.sh:ro
+      - ./infrastructure/local/postgres/init-databases.sql:/docker-entrypoint-initdb.d/02-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Infrastructure: RabbitMQ Message Broker
+  # ============================================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: finguard-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Microservice: Auth Service (Node.js + Express)
+  # ============================================================================
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: finguard-auth-service
+    restart: unless-stopped
+    environment:
+      AUTH_PORT: 5001
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-dev_insecure_jwt_secret_must_override_in_env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-finguard_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finguard_dev_secret_2026}
+      POSTGRES_AUTH_DB: ${POSTGRES_AUTH_DB:-finguard_auth}
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5001/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Microservice: Categorization Service (Python + FastAPI)
+  # ============================================================================
+  categorization-service:
+    build:
+      context: ./categorization-service
+      dockerfile: Dockerfile
+    container_name: finguard-categorization-service
+    restart: unless-stopped
+    environment:
+      CATEGORIZATION_PORT: 5003
+      ENVIRONMENT: production
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5003:5003"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5003/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Microservice: Fraud Detection Service (Python + FastAPI + scikit-learn)
+  # ============================================================================
+  fraud-detection-service:
+    build:
+      context: ./fraud-detection-service
+      dockerfile: Dockerfile
+    container_name: finguard-fraud-service
+    restart: unless-stopped
+    environment:
+      FRAUD_PORT: 5004
+      ENVIRONMENT: production
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5004:5004"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5004/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Microservice: Transaction Service (Python + FastAPI)
+  # ============================================================================
+  transaction-service:
+    build:
+      context: ./transaction-service
+      dockerfile: Dockerfile
+    container_name: finguard-transaction-service
+    restart: unless-stopped
+    environment:
+      TRANSACTION_PORT: 5002
+      ENVIRONMENT: production
+      JWT_SECRET: ${JWT_SECRET:-dev_insecure_jwt_secret_must_override_in_env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-finguard_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finguard_dev_secret_2026}
+      POSTGRES_TRANSACTIONS_DB: ${POSTGRES_TRANSACTIONS_DB:-finguard_transactions}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      CATEGORIZATION_SERVICE_URL: http://categorization-service:5003
+      FRAUD_SERVICE_URL: http://fraud-detection-service:5004
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      categorization-service:
+        condition: service_healthy
+      fraud-detection-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5002/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Microservice: Budget & Alert Service (Node.js + Express)
+  # ============================================================================
+  budget-alert-service:
+    build:
+      context: ./budget-alert-service
+      dockerfile: Dockerfile
+    container_name: finguard-budget-service
+    restart: unless-stopped
+    environment:
+      BUDGET_PORT: 5005
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-dev_insecure_jwt_secret_must_override_in_env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-finguard_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finguard_dev_secret_2026}
+      POSTGRES_BUDGETS_DB: ${POSTGRES_BUDGETS_DB:-finguard_budgets}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      TRANSACTION_SERVICE_URL: http://transaction-service:5002
+    ports:
+      - "5005:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5005/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # Frontend: React + Vite (Static Nginx bundle)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: finguard-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - finguard-network
+
+  # ============================================================================
+  # API Gateway: Nginx Reverse Proxy
+  # ============================================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: finguard-api-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:80"
+    depends_on:
+      - frontend
+      - auth-service
+      - transaction-service
+      - categorization-service
+      - fraud-detection-service
+      - budget-alert-service
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - finguard-network
+
+networks:
+  finguard-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  rabbitmq_data:
+    driver: local

@@ -1,0 +1,20 @@
+import os
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    service_name: str = "fraud-detection-service"
+    port: int = int(os.getenv("FRAUD_PORT", "5004"))
+    rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "rabbitmq")
+    rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
+    rabbitmq_user: str = os.getenv("RABBITMQ_USER", "guest")
+    rabbitmq_password: str = os.getenv("RABBITMQ_PASSWORD", "guest")
+    environment: str = os.getenv("ENVIRONMENT", "local")
+    log_level: str = os.getenv("LOG_LEVEL", "info")
+    model_version: str = "v1.0-isolation-forest-experimental"
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+        protected_namespaces = ()
+
+settings = Settings()

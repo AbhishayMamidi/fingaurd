@@ -1,0 +1,439 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'finguard-dashboards'
+        orgId: 1
+        folder: 'FinGuard Observability'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /etc/grafana/provisioning/dashboards/json
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-json
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  cluster-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "title": "Node Status",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})",
+              "legendFormat": "Ready Nodes"
+            }
+          ]
+        },
+        {
+          "title": "Total Running Pods",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_phase{phase=\"Running\"})",
+              "legendFormat": "Running Pods"
+            }
+          ]
+        },
+        {
+          "title": "CPU Utilization (%)",
+          "type": "gauge",
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)",
+              "legendFormat": "CPU %"
+            }
+          ]
+        },
+        {
+          "title": "Memory Utilization (%)",
+          "type": "gauge",
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "targets": [
+            {
+              "expr": "((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes) * 100",
+              "legendFormat": "Memory %"
+            }
+          ]
+        },
+        {
+          "title": "Pod Status by Namespace",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "targets": [
+            {
+              "expr": "sum by (namespace) (kube_pod_status_phase{phase=\"Running\"})",
+              "legendFormat": "{{namespace}}"
+            }
+          ]
+        },
+        {
+          "title": "Container CPU Usage by Pod",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{container!=\"\",namespace=\"finguard\"}[2m]))",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "title": "Pod Container Restarts",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+          "targets": [
+            {
+              "expr": "sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"finguard\"})",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": ["kubernetes", "cluster"],
+      "time": {"from": "now-30m", "to": "now"},
+      "title": "FinGuard - Cluster Overview",
+      "uid": "finguard-cluster-overview"
+    }
+
+  finguard-app-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "panels": [
+        {
+          "title": "HTTP Request Rate by Service",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "sum by (app) (rate(http_requests_total[2m]))",
+              "legendFormat": "{{app}}"
+            }
+          ]
+        },
+        {
+          "title": "HTTP Request Latency (p95)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "{{app}} (p95)"
+            }
+          ]
+        },
+        {
+          "title": "HTTP Error Rates (4xx & 5xx)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {
+              "expr": "sum by (app, status_code) (rate(http_requests_total{status_code=~\"[45]..\"}[2m]))",
+              "legendFormat": "{{app}} - {{status_code}}"
+            }
+          ]
+        },
+        {
+          "title": "Transactions Created Rate",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {
+              "expr": "sum by (type) (rate(transactions_created_total[2m]))",
+              "legendFormat": "Tx {{type}}"
+            }
+          ]
+        },
+        {
+          "title": "Fraud Detection Rate (Flagged vs Normal)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "targets": [
+            {
+              "expr": "sum by (is_fraud, risk_level) (rate(fraud_checks_total[2m]))",
+              "legendFormat": "Fraud: {{is_fraud}} ({{risk_level}})"
+            }
+          ]
+        },
+        {
+          "title": "Budget Alerts Triggered",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "targets": [
+            {
+              "expr": "sum by (alert_type) (budget_alerts_triggered_total)",
+              "legendFormat": "{{alert_type}}"
+            }
+          ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": ["finguard", "microservices"],
+      "time": {"from": "now-30m", "to": "now"},
+      "title": "FinGuard - Application Overview",
+      "uid": "finguard-app-overview"
+    }
+
+  database-messaging-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "panels": [
+        {
+          "title": "RabbitMQ Ready Messages",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_queue_messages_ready)",
+              "legendFormat": "Ready Messages"
+            }
+          ]
+        },
+        {
+          "title": "RabbitMQ Channels",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_channels_total)",
+              "legendFormat": "Channels"
+            }
+          ]
+        },
+        {
+          "title": "RabbitMQ Connections",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_connections_total)",
+              "legendFormat": "Connections"
+            }
+          ]
+        },
+        {
+          "title": "PostgreSQL Pod Status",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_phase{phase=\"Running\",pod=~\"postgres.*\"})",
+              "legendFormat": "Postgres Pods"
+            }
+          ]
+        },
+        {
+          "title": "RabbitMQ Message Publish Rate",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "targets": [
+            {
+              "expr": "sum(rate(rabbitmq_messages_published_total[2m]))",
+              "legendFormat": "Published/sec"
+            }
+          ]
+        },
+        {
+          "title": "RabbitMQ Message Delivery Rate",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "targets": [
+            {
+              "expr": "sum(rate(rabbitmq_messages_delivered_total[2m]))",
+              "legendFormat": "Delivered/sec"
+            }
+          ]
+        },
+        {
+          "title": "PostgreSQL Container Memory Usage",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{pod=~\"postgres.*\",container=\"postgres\"})",
+              "legendFormat": "Postgres Working Set Bytes"
+            }
+          ]
+        },
+        {
+          "title": "RabbitMQ Container Memory Usage",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{pod=~\"rabbitmq.*\",container=\"rabbitmq\"})",
+              "legendFormat": "RabbitMQ Working Set Bytes"
+            }
+          ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": ["finguard", "database", "rabbitmq"],
+      "time": {"from": "now-30m", "to": "now"},
+      "title": "FinGuard - Database & Messaging Overview",
+      "uid": "finguard-db-messaging-overview"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    app: grafana
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.2.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 3000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 150m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: storage-volume
+              mountPath: /var/lib/grafana
+            - name: datasources-volume
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-provider-volume
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards-json-volume
+              mountPath: /etc/grafana/provisioning/dashboards/json
+      volumes:
+        - name: storage-volume
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+        - name: datasources-volume
+          configMap:
+            name: grafana-datasources
+        - name: dashboards-provider-volume
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboards-json-volume
+          configMap:
+            name: grafana-dashboards-json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    app: grafana
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  selector:
+    app: grafana
