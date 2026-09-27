@@ -1,0 +1,42 @@
+# ArgoCD Application — FinGuard Monitoring (monitoring namespace)
+#
+# Manages Prometheus, Grafana, kube-state-metrics, and node-exporter
+# as a separate ArgoCD Application from the main finguard app.
+# Separation allows independent sync cycles: monitoring changes don't
+# trigger app pod restarts, and app changes don't touch Prometheus configs.
+#
+# HOW TO APPLY (after ArgoCD is installed):
+#   kubectl apply -f k8s/argocd/finguard-monitoring-app.yaml
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finguard-monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: finguard
+spec:
+  project: default
+
+  source:
+    # ─── REQUIRED: replace with your actual GitHub repository URL ───────────
+    repoURL: https://github.com/YOUR_GITHUB_USERNAME/finguard.git
+    # ────────────────────────────────────────────────────────────────────────
+    targetRevision: HEAD
+    path: k8s/monitoring
+    kustomize: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    # Monitoring is lower risk — enable automated sync once the finguard app is stable.
+    # automated:
+    #   prune: true
+    #   selfHeal: true

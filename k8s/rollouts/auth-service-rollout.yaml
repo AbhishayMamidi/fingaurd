@@ -1,0 +1,152 @@
+# Argo Rollouts — Canary Rollout for auth-service
+#
+# PURPOSE: This manifest is a PREPARED template. It is NOT applied to the cluster yet.
+# The live auth-service is still managed by the standard Deployment in
+# k8s/07-auth-service.yaml.
+#
+# WHAT IS A ROLLOUT?
+# An Argo Rollouts Rollout replaces a standard Kubernetes Deployment.
+# It adds sophisticated deployment strategies: canary, blue-green, analysis-based
+# rollback, and traffic splitting.
+#
+# CANARY STRATEGY USED HERE:
+#   Step 1 — 10% of traffic goes to the new version.
+#             Pause: Wait for 2 minutes and check analysis.
+#   Step 2 — 30% of traffic. Pause 2 more minutes.
+#   Step 3 — 60% of traffic. Pause 2 more minutes.
+#   Step 4 — 100% traffic (promotion complete).
+#
+# If a AnalysisRun fails at any step, Argo Rollouts automatically rolls back
+# to the previous stable version.
+#
+# HOW TO ACTIVATE (FUTURE STEP — do not apply now):
+#   1. Install Argo Rollouts CRDs:
+#      kubectl apply -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml -n argo-rollouts
+#   2. Delete the current Deployment (this is the one destructive step):
+#      kubectl delete deployment auth-service -n finguard
+#   3. Apply this Rollout:
+#      kubectl apply -f k8s/rollouts/auth-service-rollout.yaml -n finguard
+#   4. Update the image tag to trigger a canary:
+#      kubectl argo rollouts set image auth-service auth-service=finguard-auth-service:<NEW_SHA> -n finguard
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: auth-service
+  namespace: finguard
+  labels:
+    app: auth-service
+    app.kubernetes.io/part-of: finguard
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: auth-service
+
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      annotations:
+        # Prometheus scraping — mirrors 07-auth-service.yaml
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: auth-service
+          # Replace with SHA-tagged image when CI/CD registry is configured:
+          # image: ghcr.io/YOUR_GITHUB_USERNAME/finguard-auth-service:GITSHA
+          image: finguard-auth-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5001
+              name: http
+          envFrom:
+            - configMapRef:
+                name: finguard-config
+            - secretRef:
+                name: finguard-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+
+  strategy:
+    canary:
+      # canaryService and stableService: the Rollout controller will manage traffic
+      # split between these two Services. Create them before activating.
+      # canaryService: auth-service-canary
+      # stableService: auth-service-stable
+      steps:
+        # Step 1: Route 10% of traffic to the new version
+        - setWeight: 10
+        # Pause 2 minutes; during this time the AnalysisRun runs health checks
+        - pause:
+            duration: 2m
+        # Step 2: Increase to 30%
+        - setWeight: 30
+        - pause:
+            duration: 2m
+        # Step 3: Increase to 60%
+        - setWeight: 60
+        - pause:
+            duration: 2m
+        # Step 4: Promote to 100% — canary becomes the new stable
+        - setWeight: 100
+
+      analysis:
+        # Run the AnalysisTemplate during each pause interval
+        templates:
+          - templateName: auth-service-success-rate
+        startingStep: 1
+
+  # minReadySeconds: Pods must be Ready for this many seconds before being considered healthy
+  minReadySeconds: 30
+
+---
+# AnalysisTemplate: queries Prometheus to verify the auth service error rate
+# is below 5% before promoting each canary step.
+#
+# This requires Prometheus to be reachable from the Rollout controller at
+# http://prometheus:9090 in the monitoring namespace. The URL below assumes
+# a cross-namespace Service reference — adjust if Prometheus is in a different namespace.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: auth-service-success-rate
+  namespace: finguard
+spec:
+  metrics:
+    - name: success-rate
+      # Evaluate every 30 seconds, for a maximum of 3 consecutive failures
+      interval: 30s
+      successCondition: result[0] >= 0.95
+      failureLimit: 3
+      provider:
+        prometheus:
+          # Adjust the address to match where Prometheus is accessible
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{service="auth-service",status!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{service="auth-service"}[2m]))
