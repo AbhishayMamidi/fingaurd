@@ -2,8 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install security updates
+RUN apk upgrade --no-cache
+
+# Install dependencies and remove npm/cache to prevent Trivy CVEs
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev && \
+    npm cache clean --force && \
+    rm -rf /root/.npm /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY src/ ./src/
 COPY tests/ ./tests/

@@ -43,7 +43,9 @@ jobs:
         continue-on-error: true
 
       - name: Run unit tests with pytest
-        run: pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: .
 
   build:
     name: Docker Build & Trivy Scan

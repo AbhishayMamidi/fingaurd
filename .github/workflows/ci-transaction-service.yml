@@ -45,7 +45,9 @@ jobs:
         # continue-on-error: style issues do not block CI; remove when lint is clean
 
       - name: Run unit tests with pytest
-        run: pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: .
 
   build:
     name: Docker Build & Trivy Scan
