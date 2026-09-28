@@ -20,11 +20,12 @@ services:
   # ==========================================================================
   # Frontend Application (Static Site on Render CDN)
   # ==========================================================================
-  - type: static
+  - type: web
     name: finguard-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    staticPublishPath: frontend/dist
     routes:
       - type: rewrite
         source: /*
