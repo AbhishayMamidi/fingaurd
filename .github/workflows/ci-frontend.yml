@@ -61,7 +61,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image (multi-stage: Vite build + Nginx serve)
+      - name: "Build Docker image (multi-stage: Vite build + Nginx serve)"
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
