@@ -1,7 +1,16 @@
 const { Pool } = require('pg');
 const config = require('./config');
 
-const pool = new Pool(config.postgres);
+const poolConfig = config.databaseUrl
+  ? {
+      connectionString: config.databaseUrl,
+      ssl: config.databaseUrl.includes('localhost') || config.databaseUrl.includes('127.0.0.1')
+        ? false
+        : { rejectUnauthorized: false },
+    }
+  : config.postgres;
+
+const pool = new Pool(poolConfig);
 
 pool.on('error', (err) => {
   console.error('[budget-service:db] Unexpected database pool error:', err.message);

@@ -4,10 +4,11 @@ from sqlalchemy.engine import URL
 
 class Settings(BaseSettings):
     service_name: str = "transaction-service"
-    port: int = int(os.getenv("TRANSACTION_PORT", "5002"))
+    port: int = int(os.getenv("PORT", os.getenv("TRANSACTION_PORT", "5002")))
     jwt_secret: str = os.getenv("JWT_SECRET", "dev_insecure_jwt_secret_must_override_in_env")
 
     # PostgreSQL
+    database_url_env: str = os.getenv("DATABASE_URL", "")
     postgres_host: str = os.getenv("POSTGRES_HOST", "localhost")
     postgres_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
     postgres_user: str = os.getenv("POSTGRES_USER", "finguard_user")
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     postgres_db_name: str = ""
 
     # RabbitMQ
+    rabbitmq_url: str = os.getenv("RABBITMQ_URL", os.getenv("CLOUDAMQP_URL", ""))
     rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "rabbitmq")
     rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
     rabbitmq_user: str = os.getenv("RABBITMQ_USER", "guest")
@@ -42,7 +44,17 @@ class Settings(BaseSettings):
         Constructs a safe SQLAlchemy URL object using URL.create() with discrete
         fields to avoid URL parsing corruption when passwords or usernames contain
         reserved special characters (like '@', '#', '$', ':', '/').
+        If DATABASE_URL environment variable is provided, parses it directly.
         """
+        if self.database_url_env:
+            raw_url = self.database_url_env
+            if raw_url.startswith("postgres://"):
+                raw_url = "postgresql+psycopg2://" + raw_url[len("postgres://"):]
+            elif raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+psycopg2://"):
+                raw_url = "postgresql+psycopg2://" + raw_url[len("postgresql://"):]
+            from sqlalchemy.engine import make_url
+            return make_url(raw_url)
+
         return URL.create(
             drivername="postgresql+psycopg2",
             username=self.postgres_user,

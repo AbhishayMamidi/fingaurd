@@ -25,6 +25,6 @@ COPY tests/ ./tests/
 EXPOSE 5002
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')" || exit 1
+  CMD python -c "import urllib.request, os; p = os.getenv('PORT', os.getenv('TRANSACTION_PORT', '5002')); urllib.request.urlopen(f'http://localhost:{p}/health')" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5002"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-5002}"]

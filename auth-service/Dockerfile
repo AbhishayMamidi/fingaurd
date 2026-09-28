@@ -22,6 +22,6 @@ EXPOSE 5001
 
 # Healthcheck
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:5001/health').then(r => process.exit(r.ok ? 0 : 1))"
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || process.env.AUTH_PORT || 5001) + '/health').then(r => process.exit(r.ok ? 0 : 1))"
 
 CMD ["node", "src/server.js"]

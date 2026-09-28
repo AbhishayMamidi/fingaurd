@@ -1,0 +1,181 @@
+# ============================================================================
+# FinGuard — Render Cloud Deployment Blueprint
+# Specification Version: 1.0.0
+# Architecture:
+# - Ingress / API Gateway: Web Service (Nginx reverse proxy, dynamic $PORT)
+# - Frontend: Static Site (React/Vite SPA on Render global CDN, /* -> /index.html)
+# - Microservices: Web Services on Render private network
+# - Database: Render Managed PostgreSQL (Free tier / 0.0.0.0 access)
+# - Message Broker: CloudAMQP / External RabbitMQ (configured via RABBITMQ_URL)
+# ============================================================================
+
+databases:
+  - name: finguard-postgres
+    databaseName: finguard
+    user: finguard_user
+    plan: free
+    ipAllowList: []
+
+services:
+  # ==========================================================================
+  # Frontend Application (Static Site on Render CDN)
+  # ==========================================================================
+  - type: static
+    name: finguard-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://finguard-gateway.onrender.com/api
+
+  # ==========================================================================
+  # API Gateway (Nginx Reverse Proxy & Ingress)
+  # ==========================================================================
+  - type: web
+    name: finguard-gateway
+    runtime: docker
+    rootDir: api-gateway
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: AUTH_SERVICE_HOST
+        fromService:
+          type: web
+          name: finguard-auth
+          property: host
+      - key: TRANSACTION_SERVICE_HOST
+        fromService:
+          type: web
+          name: finguard-transactions
+          property: host
+      - key: CATEGORIZATION_SERVICE_HOST
+        fromService:
+          type: web
+          name: finguard-categorization
+          property: host
+      - key: FRAUD_SERVICE_HOST
+        fromService:
+          type: web
+          name: finguard-fraud
+          property: host
+      - key: BUDGET_SERVICE_HOST
+        fromService:
+          type: web
+          name: finguard-budget
+          property: host
+
+  # ==========================================================================
+  # Authentication Microservice (Node.js Express + PostgreSQL)
+  # ==========================================================================
+  - type: web
+    name: finguard-auth
+    runtime: docker
+    rootDir: auth-service
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finguard-postgres
+          property: connectionString
+
+  # ==========================================================================
+  # Transaction Microservice (Python FastAPI + PostgreSQL + RabbitMQ)
+  # ==========================================================================
+  - type: web
+    name: finguard-transactions
+    runtime: docker
+    rootDir: transaction-service
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: finguard-auth
+          envVarKey: JWT_SECRET
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finguard-postgres
+          property: connectionString
+      - key: CATEGORIZATION_SERVICE_URL
+        value: http://finguard-categorization:5003
+      - key: FRAUD_SERVICE_URL
+        value: http://finguard-fraud:5004
+      - key: RABBITMQ_URL
+        sync: false
+
+  # ==========================================================================
+  # Categorization Microservice (Python FastAPI + Rule Engine)
+  # ==========================================================================
+  - type: web
+    name: finguard-categorization
+    runtime: docker
+    rootDir: categorization-service
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: RABBITMQ_URL
+        sync: false
+
+  # ==========================================================================
+  # Fraud Detection Microservice (Python FastAPI + Isolation Forest ML)
+  # ==========================================================================
+  - type: web
+    name: finguard-fraud
+    runtime: docker
+    rootDir: fraud-detection-service
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: RABBITMQ_URL
+        sync: false
+
+  # ==========================================================================
+  # Budget & Alert Microservice (Node.js Express + PostgreSQL + RabbitMQ)
+  # ==========================================================================
+  - type: web
+    name: finguard-budget
+    runtime: docker
+    rootDir: budget-alert-service
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: finguard-auth
+          envVarKey: JWT_SECRET
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finguard-postgres
+          property: connectionString
+      - key: TRANSACTION_SERVICE_URL
+        value: http://finguard-transactions:5002
+      - key: RABBITMQ_URL
+        sync: false
