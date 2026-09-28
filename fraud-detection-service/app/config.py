@@ -3,8 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     service_name: str = "fraud-detection-service"
-    port: int = int(os.getenv("PORT", os.getenv("FRAUD_PORT", "5004")))
-    rabbitmq_url: str = os.getenv("RABBITMQ_URL", os.getenv("CLOUDAMQP_URL", ""))
+    port: int = int(os.getenv("FRAUD_PORT", "5004"))
     rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "rabbitmq")
     rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
     rabbitmq_user: str = os.getenv("RABBITMQ_USER", "guest")

@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = '/api';
 
 export const tokenStorage = {
   getToken: () => localStorage.getItem('finguard_token'),

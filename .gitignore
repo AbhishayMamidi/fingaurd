@@ -56,7 +56,6 @@ rabbitmq_data/
 *.sqlite3
 backups/
 *.sql
-!infrastructure/**/*.sql
 
 # Logs
 *.log

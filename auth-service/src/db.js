@@ -1,16 +1,7 @@
 const { Pool } = require('pg');
 const config = require('./config');
 
-const poolConfig = config.databaseUrl
-  ? {
-      connectionString: config.databaseUrl,
-      ssl: config.databaseUrl.includes('localhost') || config.databaseUrl.includes('127.0.0.1')
-        ? false
-        : { rejectUnauthorized: false },
-    }
-  : config.postgres;
-
-const pool = new Pool(poolConfig);
+const pool = new Pool(config.postgres);
 
 pool.on('error', (err) => {
   console.error('[auth-service:db] Unexpected database error on idle client:', err.message);

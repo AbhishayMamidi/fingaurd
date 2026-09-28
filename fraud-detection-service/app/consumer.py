@@ -23,19 +23,15 @@ class FraudRabbitMQConsumer:
     def _run(self):
         while self.should_run:
             try:
-                if settings.rabbitmq_url:
-                    logger.info("Connecting to RabbitMQ using URL connection string (CloudAMQP/TLS supported)...")
-                    parameters = pika.URLParameters(settings.rabbitmq_url)
-                else:
-                    logger.info(f"Connecting to RabbitMQ at {settings.rabbitmq_host}:{settings.rabbitmq_port}...")
-                    credentials = pika.PlainCredentials(settings.rabbitmq_user, settings.rabbitmq_password)
-                    parameters = pika.ConnectionParameters(
-                        host=settings.rabbitmq_host,
-                        port=settings.rabbitmq_port,
-                        credentials=credentials,
-                        heartbeat=30,
-                        blocked_connection_timeout=30,
-                    )
+                logger.info(f"Connecting to RabbitMQ at {settings.rabbitmq_host}:{settings.rabbitmq_port}...")
+                credentials = pika.PlainCredentials(settings.rabbitmq_user, settings.rabbitmq_password)
+                parameters = pika.ConnectionParameters(
+                    host=settings.rabbitmq_host,
+                    port=settings.rabbitmq_port,
+                    credentials=credentials,
+                    heartbeat=30,
+                    blocked_connection_timeout=30,
+                )
                 self.connection = pika.BlockingConnection(parameters)
                 self.channel = self.connection.channel()
 
