@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: auth-service-failing-check
+  namespace: finguard
+spec:
+  metrics:
+    - name: strict-rate
+      interval: 5s
+      count: 2
+      # Unattainable condition: error rate must be 0 and result >= 5.0 (which is mathematically impossible since max rate ratio is 1.0)
+      successCondition: result[0] >= 5.0
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{app="auth-service",status_code!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{app="auth-service"}[2m]))

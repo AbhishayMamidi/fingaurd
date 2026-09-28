@@ -6,7 +6,6 @@ namespace: finguard
 resources:
   - 00-namespace.yaml
   - 01-configmap.yaml
-  - 02-secrets.yaml
   - 03-postgres.yaml
   - 04-rabbitmq.yaml
   - 05-categorization-service.yaml
@@ -16,3 +15,5 @@ resources:
   - 09-budget-alert-service.yaml
   - 10-frontend.yaml
   - 11-api-gateway.yaml
+  - 12-hpa.yaml
+  - 13-network-policy.yaml

@@ -11,7 +11,9 @@ class BudgetEventConsumer {
   }
 
   async start() {
-    const url = `amqp://${config.rabbitmq.user}:${config.rabbitmq.password}@${config.rabbitmq.host}:${config.rabbitmq.port}`;
+    const user = encodeURIComponent(config.rabbitmq.user);
+    const pass = encodeURIComponent(config.rabbitmq.password);
+    const url = `amqp://${user}:${pass}@${config.rabbitmq.host}:${config.rabbitmq.port}`;
     const retries = 15;
     const delayMs = 4000;
 

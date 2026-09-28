@@ -24,8 +24,7 @@ $ARGOCD_NAMESPACE = "argocd"
 $FINGUARD_NAMESPACE = "finguard"
 $MONITORING_NAMESPACE = "monitoring"
 
-# REQUIRED: Set this to your actual GitHub repository URL
-$REPO_URL = "https://github.com/YOUR_GITHUB_USERNAME/finguard.git"
+$REPO_URL = "https://github.com/AbhishayMamidi/fingaurd.git"
 
 # ArgoCD admin password (change this after first login)
 # If left empty, ArgoCD generates a random password (retrieve with the command below)

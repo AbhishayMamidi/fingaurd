@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  finguard-alerts.yaml: |
+    groups:
+      - name: finguard-alerts
+        rules:
+          - alert: FinGuardServiceUnavailable
+            expr: up{job="finguard-pods"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "FinGuard pod {{ $labels.kubernetes_pod_name }} unavailable"
+              description: "Pod {{ $labels.kubernetes_pod_name }} in namespace {{ $labels.kubernetes_namespace }} is down."
+
+          - alert: HighHTTP5xxErrorRate
+            expr: sum(rate(http_requests_total{status_code=~"5.."}[2m])) by (service) / sum(rate(http_requests_total[2m])) by (service) > 0.05
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Elevated 5xx error rate on {{ $labels.service }}"
+              description: "5xx error rate exceeds 5% for service {{ $labels.service }} over the last 2 minutes."
+
+          - alert: HighRequestLatency
+            expr: sum(rate(http_request_duration_seconds_sum[2m])) by (service) / sum(rate(http_request_duration_seconds_count[2m])) by (service) > 1.0
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High request latency on {{ $labels.service }}"
+              description: "Average latency exceeds 1s for service {{ $labels.service }}."
+
+          - alert: PodFrequentRestarts
+            expr: increase(kube_pod_container_status_restarts_total{namespace="finguard"}[15m]) > 2
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.pod }} restarted frequently"
+              description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} restarted more than 2 times in 15 minutes."
+
+          - alert: HighCPUUsage
+            expr: sum(rate(container_cpu_usage_seconds_total{namespace="finguard",container!=""}[2m])) by (pod) > 0.85
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on pod {{ $labels.pod }}"
+              description: "Pod {{ $labels.pod }} CPU usage is sustained above 85%."
+
+          - alert: HighMemoryUsage
+            expr: sum(container_memory_working_set_bytes{namespace="finguard",container!=""}) by (pod) / sum(container_spec_memory_limit_bytes{namespace="finguard",container!=""}) by (pod) > 0.85
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on pod {{ $labels.pod }}"
+              description: "Pod {{ $labels.pod }} memory working set is above 85% of limit."
+
+          - alert: PostgreSQLDown
+            expr: pg_up == 0 or probe_success{instance=~".*postgres.*"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "PostgreSQL database unavailable"
+              description: "PostgreSQL service is not responding to readiness or connectivity checks."
+
+          - alert: RabbitMQQueueBuildup
+            expr: rabbitmq_queue_messages{namespace="finguard"} > 100
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "RabbitMQ message backlog detected"
+              description: "Queue {{ $labels.queue }} has more than 100 unprocessed messages."
+
+          - alert: DiskCapacityLow
+            expr: kubelet_volume_stats_available_bytes{namespace=~"finguard|monitoring"} / kubelet_volume_stats_capacity_bytes < 0.15
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "PVC {{ $labels.persistentvolumeclaim }} low on disk space"
+              description: "Available disk space is below 15% on volume {{ $labels.persistentvolumeclaim }}."
+
+          - alert: FraudDetectionServiceErrors
+            expr: rate(fraud_checks_total{status="error"}[2m]) > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Fraud Detection service is reporting evaluation errors"
+              description: "Fraud model scoring or evaluation pipeline is producing errors."
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: finguard-platform
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'service', 'namespace']
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      receiver: 'local-default'
+    receivers:
+      - name: 'local-default'
+        # Local receiver: alerts logged in Alertmanager UI & cluster logs
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app: alertmanager
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+          ports:
+            - name: web
+              containerPort: 9093
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/alertmanager
+      volumes:
+        - name: config-volume
+          configMap:
+            name: alertmanager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app: alertmanager
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: finguard-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 9093
+      targetPort: 9093
+  selector:
+    app: alertmanager

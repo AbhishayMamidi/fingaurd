@@ -54,6 +54,8 @@ postgres_data/
 rabbitmq_data/
 *.db
 *.sqlite3
+backups/
+*.sql
 
 # Logs
 *.log

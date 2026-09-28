@@ -10,3 +10,6 @@ resources:
   - 03-kube-state-metrics.yaml
   - 04-prometheus.yaml
   - 05-grafana.yaml
+  - 06-alerts.yaml
+  - 07-loki.yaml
+  - 08-promtail.yaml
